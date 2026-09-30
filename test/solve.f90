@@ -61,8 +61,8 @@ end module test_solve__closed_form
 program test_solve
 !! Tests of the solver on systems with known solutions: univariate
 !! polynomials, a 2x2 system (independence of the random seed),
-!! solutions at infinity, a double root, a user-supplied system, and
-!! input validation.
+!! solutions at infinity, singular solutions with multiplicities, a
+!! user-supplied system, and input validation.
 
   use polyhomocont, only : wp
   use polyhomocont, only : err_invalid_input
@@ -70,6 +70,7 @@ program test_solve
   use polyhomocont, only : solve
   use polyhomocont, only : solve_options
   use polyhomocont, only : solve_result
+  use polyhomocont, only : endgame_converged
   use polyhomocont__linalg, only : norm_inf
   use test_solve__closed_form, only : closed_form_system
   use testing, only : assert_status
@@ -85,6 +86,9 @@ program test_solve
   call check_2x2()
   call check_infinity()
   call check_double_root()
+  call check_mixed()
+  call check_multiplicity4()
+  call check_without_endgame()
   call check_user_system()
   call check_invalid()
   call finish()
@@ -170,9 +174,8 @@ contains
 
   subroutine check_infinity()
     !! x y = 1, x^2 = 4: Bezout number 4, but only the 2 finite solutions
-    !! (2, 1/2) and (-2, -1/2); the other paths go to the (singular)
-    !! point (0 : 1 : 0) at infinity and must not be reported as
-    !! solutions.
+    !! (2, 1/2) and (-2, -1/2); the other 2 paths go to the (singular)
+    !! point (0 : 1 : 0) at infinity.
 
     type(sparse_system) :: sys
     type(solve_result) :: res
@@ -192,15 +195,15 @@ contains
     call assert_equal("infinity: solutions", res%nsolutions, 2)
     call assert_small("infinity: distance to known solutions",  &
       set_distance(res%solutions, sols), 1.0e-12_wp)
-    call assert_equal("infinity: remaining paths infinite/failed",  &
-      res%ninfinite + res%nfailed + res%nsingular, 2)
+    call assert_equal("infinity: paths at infinity", res%ninfinite, 2)
+    call assert_equal("infinity: failed", res%nfailed, 0)
+    call assert_equal("infinity: singular", res%nsingular, 0)
 
   end subroutine check_infinity
 
   subroutine check_double_root()
-    !! (x - 1)^2 (x + 1): the simple root -1 is the only nonsingular
-    !! solution; the two paths to the double root 1 are singular or fail
-    !! close to t = 0 (no end game yet).
+    !! (x - 1)^2 (x + 1): the simple root -1 is the only regular solution;
+    !! the double root 1 is a singular solution of multiplicity 2.
 
     type(sparse_system) :: sys
     type(solve_result) :: res
@@ -211,14 +214,109 @@ contains
       reshape([3, 2, 1, 0], [1, 4]), status)
     call solve(sys, res, status)
     call assert_status("double root: solve", status)
-    call assert_equal("double root: nonsingular solutions",  &
+    call assert_equal("double root: regular solutions",  &
       res%nsolutions, 1)
     call assert_small("double root: solution -1",  &
       abs(res%solutions(1, 1) + 1.0_wp), 1.0e-12_wp)
-    call assert_equal("double root: remaining paths singular/failed",  &
-      res%nsingular + res%nfailed, 2)
+    call assert_equal("double root: singular solutions", res%nsingular, 1)
+    call assert_equal("double root: multiplicity", res%multiplicities(1),  &
+      2)
+    call assert_small("double root: singular solution 1",  &
+      abs(res%singular_solutions(1, 1) - 1.0_wp), 1.0e-10_wp)
+    call assert_equal("double root: failed", res%nfailed, 0)
 
   end subroutine check_double_root
+
+  subroutine check_mixed()
+    !! x y = 1, (x - 1)^2 (x + 2) = 0: Bezout number 6. Regular solution
+    !! (-2, -1/2), singular solution (1, 1) of multiplicity 2, and 3 paths
+    !! to infinity.
+
+    type(sparse_system) :: sys
+    type(solve_result) :: res
+    integer :: status
+    integer :: k
+    logical :: winding_ok
+
+    call sys%init(2)
+    call sys%add_equation([1.0_wp, -1.0_wp],  &
+      reshape([1, 1,  0, 0], [2, 2]), status)
+    ! (x - 1)^2 (x + 2) = x^3 - 3x + 2
+    call sys%add_equation([1.0_wp, -3.0_wp, 2.0_wp],  &
+      reshape([3, 0,  1, 0,  0, 0], [2, 3]), status)
+    call solve(sys, res, status)
+    call assert_status("mixed: solve", status)
+    call assert_equal("mixed: paths", res%npaths, 6)
+    call assert_equal("mixed: regular solutions", res%nsolutions, 1)
+    call assert_small("mixed: regular solution",  &
+      maxval(abs(res%solutions(:, 1) - [-2.0_wp, -0.5_wp])), 1.0e-12_wp)
+    call assert_equal("mixed: singular solutions", res%nsingular, 1)
+    call assert_equal("mixed: multiplicity", res%multiplicities(1), 2)
+    call assert_small("mixed: singular solution",  &
+      maxval(abs(res%singular_solutions(:, 1) - 1.0_wp)), 1.0e-10_wp)
+    call assert_equal("mixed: paths at infinity", res%ninfinite, 3)
+    call assert_equal("mixed: failed", res%nfailed, 0)
+    call assert_true("mixed: all end games converged",  &
+      all([(res%paths(k)%endgame_status == endgame_converged,  &
+      k = 1, res%npaths)]))
+    winding_ok = .true.
+    do k = 1, res%npaths
+      if (res%paths(k)%solution_index > 0) then
+        winding_ok = winding_ok .and. res%paths(k)%winding_number == 1
+      else if (res%paths(k)%singular_index > 0) then
+        winding_ok = winding_ok .and. res%paths(k)%winding_number == 2
+      end if
+    end do
+    call assert_true("mixed: winding numbers 1 (regular), 2 (double root)",  &
+      winding_ok)
+
+  end subroutine check_mixed
+
+  subroutine check_multiplicity4()
+    !! x^2 = 0, y^2 + x y = 0: the origin is the only solution, of
+    !! multiplicity 4 (Bezout number 4).
+
+    type(sparse_system) :: sys
+    type(solve_result) :: res
+    integer :: status
+
+    call sys%init(2)
+    call sys%add_equation([1.0_wp], reshape([2, 0], [2, 1]), status)
+    call sys%add_equation([1.0_wp, 1.0_wp],  &
+      reshape([0, 2,  1, 1], [2, 2]), status)
+    call solve(sys, res, status)
+    call assert_status("multiplicity 4: solve", status)
+    call assert_equal("multiplicity 4: regular solutions",  &
+      res%nsolutions, 0)
+    call assert_equal("multiplicity 4: singular solutions",  &
+      res%nsingular, 1)
+    call assert_equal("multiplicity 4: multiplicity",  &
+      res%multiplicities(1), 4)
+    call assert_small("multiplicity 4: solution at the origin",  &
+      maxval(abs(res%singular_solutions(:, 1))), 1.0e-8_wp)
+    call assert_equal("multiplicity 4: failed", res%nfailed, 0)
+
+  end subroutine check_multiplicity4
+
+  subroutine check_without_endgame()
+    !! With the end game switched off, regular solutions are still found.
+
+    type(sparse_system) :: sys
+    type(solve_result) :: res
+    type(solve_options) :: opts
+    integer :: status
+
+    call sys%init(2)
+    call sys%add_equation([1.0_wp, 1.0_wp, -5.0_wp],  &
+      reshape([2, 0,  0, 2,  0, 0], [2, 3]), status)
+    call sys%add_equation([1.0_wp, -2.0_wp],  &
+      reshape([1, 1,  0, 0], [2, 2]), status)
+    opts%use_endgame = .false.
+    call solve(sys, res, status, opts)
+    call assert_status("without end game: solve", status)
+    call assert_equal("without end game: solutions", res%nsolutions, 4)
+
+  end subroutine check_without_endgame
 
   subroutine check_user_system()
     !! The closed-form user system and its sparse representation must

@@ -20,6 +20,10 @@ module polyhomocont
   use polyhomocont__solve, only : solve_options
   use polyhomocont__solve, only : solve_result
   use polyhomocont__solve, only : path_result
+  use polyhomocont__solve, only : path_endgame_failed
+  use polyhomocont__endgame, only : endgame_options
+  use polyhomocont__endgame, only : endgame_converged
+  use polyhomocont__endgame, only : endgame_not_converged
 
   implicit none
 
@@ -43,5 +47,9 @@ module polyhomocont
   public :: path_success
   public :: path_failed_min_step
   public :: path_failed_max_steps
+  public :: path_endgame_failed
+  public :: endgame_options
+  public :: endgame_converged
+  public :: endgame_not_converged
 
 end module polyhomocont
