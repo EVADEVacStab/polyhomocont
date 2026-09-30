@@ -82,11 +82,20 @@ installed under `~/intel/oneapi/mkl` (relevant if LAPACK is used).
 
 ## Tests
 
-- Each test is a standalone program in `test/` (auto-discovered).
-  Pattern from `fortransitions/test/check.f90`: helpers
-  `assert_status`, `assert_close`, `assert_true` that print
-  `ok   ...` / `FAIL ...` and count failures; `error stop 1` at the end
-  if `nfail > 0`.
+- Each test is a standalone program in `test/` (auto-discovered), one
+  per module plus problem-level tests (`solve.f90`, `katsura.f90`).
+  Shared helpers live in `test/testing.f90` (module `testing`):
+  `assert_status`, `assert_close`, `assert_small`, `assert_true`,
+  `assert_equal` print `ok   ...` / `FAIL ...` and count failures;
+  `call finish()` ends each test (`error stop 1` on failure). It also
+  has finite-difference Jacobian checks, a homogeneity check and
+  `set_distance` for comparing solution sets up to ordering. Test
+  modules must not use nested `contains` inside internal procedures.
+- Before each commit, run the tests in all four configurations
+  (gfortran/ifx x debug/release) and check for compiler warnings, e.g.
+  `for c in gfortran ifx; do for p in debug release; do
+  fpm test --compiler $c --profile $p; done; done` (use
+  `fpm clean --all` first to see warnings of cached objects).
 - Verification, in order of preference:
   1. **No external tool**: systems with closed-form solutions, and
      benchmark families with known root counts (Katsura-n: 2ⁿ,
@@ -212,14 +221,23 @@ Conventions:
 - **README**: states that the code was written by Claude (Anthropic),
   like `fortransitions/README.md`.
 
-## First milestone
+## Status and next steps
 
-Total-degree homotopy solver for regular (nonsingular) solutions:
-config module, abstract system type + sparse polynomial type, complex
-LU, total-degree start system with random γ, predictor-corrector
-tracker in projective coordinates, basic post-processing; tests on
-univariate polynomials, small systems with known solutions, Katsura-3
-and Katsura-4. End games follow in the next milestone.
+**Milestone 1 (done, 2026-09-30)**: total-degree homotopy solver for
+regular solutions: all modules of the architecture table, example in
+`app/example.f90`, tests for every module plus Katsura-3/4 against
+sympy references. Known limitation: without an end game, paths to
+singular endpoints (multiple roots, singular points at infinity) fail
+close to t = 0 (`path_failed_min_step`, t ~ 1e-14 .. 1e-7) or end
+flagged singular; they are excluded from `solutions`.
+
+**Milestone 2 (next)**: end game near t = 0 (power-series or Cauchy end
+game, winding numbers), so that singular endpoints and points at
+infinity are classified properly; clustering of singular solutions with
+multiplicities (`singular_solutions`); then consider re-tracking paths
+with tighter settings when `nduplicates > 0`. Later items: see the
+roadmap above (scaling, polyhedral homotopy, parameter homotopy,
+monodromy).
 
 ## Working conventions
 
