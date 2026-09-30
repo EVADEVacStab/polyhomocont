@@ -42,9 +42,10 @@ program test_homotopy
   call hom%init(sys, gen, status)
   call assert_status("re-init", status)
   call check_start_solutions()
-  call check_derivatives(0.37_wp)
-  call check_derivatives(1.0_wp)
-  call check_derivatives(0.0_wp)
+  call check_derivatives((0.37_wp, 0.0_wp))
+  call check_derivatives((1.0_wp, 0.0_wp))
+  call check_derivatives((0.0_wp, 0.0_wp))
+  call check_derivatives((0.02_wp, -0.05_wp))
 
   ! A system with fewer equations than variables must be rejected
   call incomplete%init(2)
@@ -74,7 +75,7 @@ contains
     res = 0.0_wp
     do k = 1, hom%nstart
       call hom%start_solution(k, z(:, k))
-      call hom%evaluate(z(:, k), 1.0_wp, h, hz, ht)
+      call hom%evaluate(z(:, k), (1.0_wp, 0.0_wp), h, hz, ht)
       ! Relative to the scale |z|^3 of the terms of the cubic equation
       res = max(res, norm_inf(h)/max(1.0_wp, norm_inf(z(:, k)))**3)
     end do
@@ -92,9 +93,10 @@ contains
   end subroutine check_start_solutions
 
   subroutine check_derivatives(t)
-    !! dH/dz and dH/dt against central finite differences at a random z.
+    !! dH/dz and dH/dt against central finite differences at a random z
+    !! (for complex t, the derivative along the real t direction).
 
-    real(wp), intent(in) :: t
+    complex(wp), intent(in) :: t
 
     complex(wp) :: z(3)
     complex(wp) :: zp(3)
@@ -107,7 +109,7 @@ contains
     complex(wp) :: dt(3)
     real(wp), parameter :: step = 1.0e-5_wp
     real(wp) :: err
-    character(len=40) :: name
+    character(len=48) :: name
     integer :: j
 
     do j = 1, 3
@@ -124,13 +126,13 @@ contains
       call hom%evaluate(zp, t, hm, dz, dt)
       err = max(err, norm_inf((hp - hm)/(2.0_wp*step) - hz(:, j)))
     end do
-    write(name, "(a,f4.2)") "dH/dz vs FD, t = ", t
+    write(name, "(a,f5.2,sp,f6.2,a)") "dH/dz vs FD, t = ", t, "i"
     call assert_small(trim(name), err/maxval(abs(hz)), 1.0e-8_wp)
 
     call hom%evaluate(z, t + step, hp, dz, dt)
     call hom%evaluate(z, t - step, hm, dz, dt)
     err = norm_inf((hp - hm)/(2.0_wp*step) - ht)
-    write(name, "(a,f4.2)") "dH/dt vs FD, t = ", t
+    write(name, "(a,f5.2,sp,f6.2,a)") "dH/dt vs FD, t = ", t, "i"
     call assert_small(trim(name), err/max(1.0_wp, norm_inf(ht)),  &
       1.0e-8_wp)
 

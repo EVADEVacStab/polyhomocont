@@ -153,7 +153,7 @@ contains
       call track_path(hom, z, 1.0_wp, 0.0_wp, opts%tracker, info)
       associate(p => res%paths(k))
         p%status = info%status
-        p%t = info%t
+        p%t = real(info%t, wp)
         p%naccepted = info%naccepted
         p%nrejected = info%nrejected
         if (info%status == path_success) then
@@ -198,7 +198,7 @@ contains
 
     dnorm_prev = huge(1.0_wp)
     do it = 1, maxit
-      call hom%evaluate(z, 0.0_wp, h, hz, ht)
+      call hom%evaluate(z, (0.0_wp, 0.0_wp), h, hz, ht)
       call lu_factor(hz, ipiv, status)
       if (status /= status_ok) return
       h = -h
@@ -231,7 +231,7 @@ contains
     p%z = z
     znorm = norm_inf(z)
 
-    call hom%evaluate(z, 0.0_wp, h, hz, ht)
+    call hom%evaluate(z, (0.0_wp, 0.0_wp), h, hz, ht)
     p%cond = cond1(hz)
     p%residual = maxval(abs(h(1:n))/znorm**hom%deg)
 

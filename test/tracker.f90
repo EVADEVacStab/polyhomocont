@@ -13,6 +13,8 @@ program test_tracker
   use polyhomocont__tracker, only : tracker_options
   use polyhomocont__tracker, only : path_info
   use polyhomocont__tracker, only : track_path
+  use polyhomocont__tracker, only : track_segment
+  use polyhomocont__tracker, only : arc_segment
   use polyhomocont__tracker, only : path_success
   use polyhomocont__tracker, only : path_failed_max_steps
   use testing, only : assert_status
@@ -28,6 +30,7 @@ program test_tracker
   call check_cubic()
   call check_2x2()
   call check_max_steps()
+  call check_loops()
   call finish()
 
 contains
@@ -150,8 +153,66 @@ contains
     call assert_true("max steps: reported",  &
       info%status == path_failed_max_steps)
     call assert_true("max steps: t in (0, 1)",  &
-      info%t > 0.0_wp .and. info%t < 1.0_wp)
+      real(info%t) > 0.0_wp .and. real(info%t) < 1.0_wp)
 
   end subroutine check_max_steps
+
+  subroutine check_loops()
+    !! Loops |t| = r around t = 0 for (x - 1)^2 (x + 1). The path to the
+    !! simple root -1 closes after one loop (winding number 1); a path to
+    !! the double root 1 moves to the other path of its cycle after one
+    !! loop and closes after two (winding number 2).
+
+    real(wp), parameter :: twopi = 8.0_wp*atan(1.0_wp)
+    real(wp), parameter :: r = 1.0e-3_wp
+    type(sparse_system), target :: sys
+    type(total_degree_homotopy) :: hom
+    type(tracker_options) :: opts
+    type(path_info) :: info
+    complex(wp) :: z(2)
+    complex(wp) :: z0(2)
+    complex(wp) :: z1(2)
+    integer :: status
+    integer :: k
+    integer :: nsimple
+    integer :: ndouble
+
+    call sys%init(1)
+    call sys%add_equation([1.0_wp, -1.0_wp, -1.0_wp, 1.0_wp],  &
+      reshape([3, 2, 1, 0], [1, 4]), status)
+    call hom%init(sys, gen, status)
+    opts%step_init = 1.0_wp/8.0_wp
+    opts%step_max = 1.0_wp/8.0_wp
+
+    nsimple = 0
+    ndouble = 0
+    do k = 1, hom%nstart
+      call hom%start_solution(k, z)
+      call track_path(hom, z, 1.0_wp, r, tracker_options(), info)
+      call assert_true("loops: tracked to r", info%status == path_success)
+      z0 = z
+      call track_segment(hom, z, arc_segment(r, 0.0_wp, twopi), opts,  &
+        info)
+      call assert_true("loops: first loop tracked",  &
+        info%status == path_success)
+      z1 = z
+      if (abs(z0(1)/z0(2) + 1.0_wp) < 0.1_wp) then
+        nsimple = nsimple + 1
+        call assert_small("loops: simple root closes after 1 loop",  &
+          norm_inf(z1 - z0)/norm_inf(z0), 1.0e-9_wp)
+      else
+        ndouble = ndouble + 1
+        call assert_true("loops: double root, other branch after 1 loop",  &
+          norm_inf(z1 - z0)/norm_inf(z0) > 1.0e-3_wp)
+        call track_segment(hom, z, arc_segment(r, 0.0_wp, twopi), opts,  &
+          info)
+        call assert_small("loops: double root closes after 2 loops",  &
+          norm_inf(z - z0)/norm_inf(z0), 1.0e-9_wp)
+      end if
+    end do
+    call assert_true("loops: 1 simple and 2 double-root paths",  &
+      nsimple == 1 .and. ndouble == 2)
+
+  end subroutine check_loops
 
 end program test_tracker
