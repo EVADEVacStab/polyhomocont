@@ -11,6 +11,7 @@ module polyhomocont
   use polyhomocont__config, only : err_singular_matrix
   use polyhomocont__config, only : err_numerical
   use polyhomocont__system, only : poly_system
+  use polyhomocont__sparse, only : sparse_system
 
   implicit none
 
@@ -24,5 +25,6 @@ module polyhomocont
   public :: err_numerical
   ! Polynomial systems
   public :: poly_system
+  public :: sparse_system
 
 end module polyhomocont
