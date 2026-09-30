@@ -231,13 +231,27 @@ singular endpoints (multiple roots, singular points at infinity) fail
 close to t = 0 (`path_failed_min_step`, t ~ 1e-14 .. 1e-7) or end
 flagged singular; they are excluded from `solutions`.
 
-**Milestone 2 (next)**: end game near t = 0 (power-series or Cauchy end
-game, winding numbers), so that singular endpoints and points at
-infinity are classified properly; clustering of singular solutions with
-multiplicities (`singular_solutions`); then consider re-tracking paths
-with tighter settings when `nduplicates > 0`. Later items: see the
-roadmap above (scaling, polyhedral homotopy, parameter homotopy,
-monodromy).
+**Milestone 2 (done, 2026-09-30)**: Cauchy end game (`endgame.f90`),
+complex t with line/arc segments in the tracker, random start system
+constants b_i, classification by winding number, singular solutions
+with multiplicities, cyclic-5/6 benchmarks. Lessons learned:
+- Start system G_i = z_i^d_i - w^d_i (b_i = 1) shares roots of unity
+  with many targets (constant paths, wrong cycle structure): keep b_i
+  random.
+- Cauchy estimates from loops that enclose other branch points agree
+  across radii (Cauchy's theorem) but are wrong: the backward-error
+  test `residual_tol` in the end game is essential (cyclic-6).
+
+**Possible next steps** (ask the user which to pursue):
+- Performance: the end game costs ~3x the steps of a regular path
+  (~39 vs 13); e.g. accept c = 1 estimates early by a Newton check at
+  t = 0. The sparse evaluator could share work between terms. The
+  debug-profile test suite takes ~30 s, mostly cyclic-6.
+- Re-track paths with tighter settings when `nduplicates > 0`.
+- Coefficient scaling (HOM4PS Sec. 5.2), polyhedral homotopy (mixed
+  volume / mixed cells), parameter homotopy, monodromy (roadmap above).
+- Positive-dimensional components are not detected (endpoints on them
+  are reported as singular).
 
 ## Working conventions
 

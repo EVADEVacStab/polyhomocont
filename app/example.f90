@@ -56,8 +56,9 @@ contains
 end module example__user_system
 
 program example
-!! Solves two small systems with polyhomocont: one given in the sparse
-!! representation, one through a user-supplied evaluator.
+!! Solves small systems with polyhomocont: given in the sparse
+!! representation or through a user-supplied evaluator, and one with a
+!! singular solution and solutions at infinity.
 
   use polyhomocont, only : wp
   use polyhomocont, only : status_ok
@@ -90,6 +91,18 @@ program example
   print "(/,a)", "x^2 + y^2 = 4, y = x^3 - 2x + 1/2 (user evaluator):"
   call report(res)
 
+  ! x y = 1, (x - 1)^2 (x + 2) = 0: a regular solution, a double
+  ! (singular) solution and paths going to infinity
+  call sys%init(2)
+  call sys%add_equation([1.0_wp, -1.0_wp],  &
+    reshape([1, 1,  0, 0], [2, 2]), status)
+  call sys%add_equation([1.0_wp, -3.0_wp, 2.0_wp],  &
+    reshape([3, 0,  1, 0,  0, 0], [2, 3]), status)
+  call solve(sys, res, status)
+  if (status /= status_ok) error stop "solve failed"
+  print "(/,a)", "x y = 1, (x - 1)^2 (x + 2) = 0:"
+  call report(res)
+
 contains
 
   subroutine report(res)
@@ -109,6 +122,15 @@ contains
     do j = 1, res%nreal
       print "(2x,2f12.8)", res%real_solutions(:, j)
     end do
+    if (res%nsingular > 0) then
+      print "(a)", "  singular solutions (multiplicity):"
+      do j = 1, res%nsingular
+        print "(2x,a,2(f10.6,sp,f10.6,ss,a),a,i0,a)", "(",  &
+          res%singular_solutions(1, j), "i, ",  &
+          res%singular_solutions(2, j), "i)", " (", res%multiplicities(j),  &
+          ")"
+      end do
+    end if
 
   end subroutine report
 

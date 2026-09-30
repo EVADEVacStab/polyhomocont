@@ -15,8 +15,9 @@ module polyhomocont__homotopy
 !! constants gamma (|gamma| = 1, "gamma trick"), b_i (|b_i| = 1) and a
 !! (patch). The random b_i avoid start solutions that coincide with
 !! solutions of the target system (e.g. roots of unity), which would
-!! give non-generic paths that are constant in t. For generic gamma, the d_1 * ... * d_n
-!! paths starting at the solutions of G are smooth for t in (0, 1] and
+!! give non-generic paths that are constant in t. For generic gamma, the
+!! d_1 * ... * d_n paths starting at the solutions of G are smooth for
+!! t in (0, 1] and
 !! their endpoints at t = 0 include all isolated solutions of F^h = 0
 !! (Li, Acta Numerica 6 (1997) 399; HOM4PS-2.0, Lee et al. 2008).
 !! Tracking in projective space on the patch a . z = 1 keeps paths that

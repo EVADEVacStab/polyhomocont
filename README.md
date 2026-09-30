@@ -13,24 +13,29 @@ and this README.
 
 The solver uses the total-degree homotopy with the gamma trick,
 
-    H(z, t) = γ t G(z) + (1 - t) F^h(z),   G_i(z) = z_i^{d_i} - w^{d_i},
+    H(z, t) = γ t G(z) + (1 - t) F^h(z),   G_i(z) = z_i^{d_i} - b_i w^{d_i},
 
 tracked from t = 1 (start system G, whose d_1 ⋯ d_n solutions are
-known) to t = 0 (target system F). The paths are followed in projective
-coordinates z = (z_1, …, z_n, w) on a random affine patch a·z = 1, so
-paths diverging to infinity stay bounded. The path tracker combines a
+known) to t = 0 (target system F), with random complex constants γ and
+b_i. The paths are followed in projective coordinates
+z = (z_1, …, z_n, w) on a random affine patch a·z = 1, so paths
+diverging to infinity stay bounded. The path tracker combines a
 fourth-order Runge-Kutta predictor with a Newton corrector and adaptive
 step size control; steps are only accepted if the corrector converges
-quickly, which protects against path jumping. The endpoints are refined
-with Newton's method and classified as finite or at infinity, regular or
-singular, and real or complex.
+quickly, which protects against path jumping.
 
-**Current limitations:** there is no end game yet, so singular
-solutions (multiple roots, singular points at infinity) are not
-resolved: paths ending there are reported as singular or as failed
-close to t = 0, and they are not included in the list of solutions.
-Regular (nonsingular) finite solutions, which is what most applications
-need, are all found.
+Near t = 0, the **Cauchy end game** computes the endpoint of each path:
+it tracks loops |t| = r in the complex t-plane until the path closes,
+which gives the winding number c, and averages the path over the loop
+(Cauchy integral formula) at shrinking radii until the estimates agree
+and solve the target system. This resolves singular endpoints (multiple
+roots) and endpoints at infinity to high accuracy. The endpoints are
+then classified as finite or at infinity, regular or singular (winding
+number > 1 or ill-conditioned Jacobian), and real or complex; regular
+ones are refined with Newton's method.
+
+Positive-dimensional solution components are not treated specially:
+paths ending on them are reported as singular endpoints.
 
 ## Usage
 
@@ -89,18 +94,26 @@ See `app/example.f90` for a complete example.
 
 ### Results and options
 
-`solve_result` contains the distinct finite regular solutions
-(`solutions`, `real_solutions`) and counters for singular endpoints
-(`nsingular`), paths going to infinity (`ninfinite`), failed paths
-(`nfailed`) and duplicate endpoints of regular paths (`nduplicates`,
-which indicates path jumping and should be zero). `res%paths(k)` holds
-the endpoint of every path together with its classification, condition
-number, residual and step counts.
+`solve_result` contains
+
+- the distinct finite regular solutions (`solutions`, and the real ones
+  in `real_solutions`),
+- the distinct finite singular solutions (`singular_solutions`) with
+  their `multiplicities` (the number of paths ending there),
+- the number of paths going to infinity (`ninfinite`), of failed paths
+  (`nfailed`), and of duplicate endpoints of regular paths
+  (`nduplicates`, which indicates path jumping and should be zero).
+
+`res%paths(k)` holds the endpoint of every path together with its
+classification, winding number, end game accuracy, condition number,
+residual and step counts.
 
 The optional argument `options` of type `solve_options` sets the
 random seed (results are reproducible for a fixed seed), the
-classification tolerances and, in its component `tracker`, the step size
-and corrector parameters of the path tracker.
+classification tolerances, and in its components `tracker` and
+`endgame` the parameters of the path tracker and the end game (e.g.
+`endgame%t_start`, the value of t where the end game begins). The end
+game can be switched off with `use_endgame = .false.`.
 
 `status` is nonzero (`err_invalid_input`) if the system is not square
 or has an equation of degree < 1.
@@ -121,10 +134,15 @@ Intel ifx (`--compiler ifx`).
 The tests compare against solutions that are known analytically or were
 computed independently with Gröbner bases (sympy) and high-precision
 root finding (mpmath); the scripts are in `reference/` (see
-`reference/README.md`).
+`reference/README.md`). Benchmarks with known solution counts:
+Katsura-3/4 (8, 16 solutions), cyclic-5 (70 of 120 paths) and cyclic-6
+(156 of 720 paths, the others go to infinity).
 
 ## Literature
 
+- A. P. Morgan, A. J. Sommese, C. W. Wampler, *Computing singular
+  solutions to nonlinear analytic systems*, Numer. Math. 58 (1991) 669
+  (Cauchy end game).
 - T. L. Lee, T. Y. Li, C. H. Tsai, *HOM4PS-2.0: a software package for
   solving polynomial systems by the polyhedral homotopy continuation
   method*, Computing 83 (2008) 109.
