@@ -1,0 +1,33 @@
+name = "polyhomocont"
+version = "0.1.0"
+license = "MIT"
+author = "Thomas Biekötter"
+maintainer = "thomas.biekoetter@desy.de"
+copyright = "Copyright 2026, Thomas Biekötter"
+
+[build]
+auto-executables = true
+auto-tests = true
+auto-examples = true
+module-naming = false
+
+[install]
+library = true
+test = false
+
+[fortran]
+implicit-typing = false
+implicit-external = false
+source-form = "free"
+
+[features]
+debug.flags = "-fPIC -O0 -g "
+debug.gfortran.flags = "-fbounds-check -fbacktrace -Wall -Wuninitialized -fmax-errors=1 -fcheck=all -ffpe-trap=invalid,zero,overflow -ffpe-summary=invalid,zero,overflow"
+debug.ifx.flags = "-check bounds -check pointer -traceback -fp-model=precise"
+release.flags = "-O3"
+release.gfortran.flags = "-march=native -fmax-errors=1 -ffixed-line-length-none -fno-range-check -ffpe-summary=invalid,zero,overflow"
+release.ifx.flags = "-xHost -fp-model=precise"
+
+[profiles]
+debug = ["debug"]
+release = ["release"]
