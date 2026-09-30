@@ -16,11 +16,20 @@ module polyhomocont__endgame
 !! (m arcs per loop) until the path closes, which gives c and an estimate
 !! of z(0). It then moves inward along the real axis to
 !! r * radius_factor and repeats, until two consecutive estimates agree
-!! to the relative tolerance `tol`. Loops that cannot be tracked (e.g.
-!! because the circle is too large and encloses other branch points) are
-!! skipped by moving inward. In projective coordinates on an affine
-!! patch, endpoints at infinity (w = 0) are handled exactly like finite
-!! ones.
+!! to the relative tolerance `tol` and the estimate solves the target
+!! system, ||H(z, 0)|| <= residual_tol * ||dH/dz|| ||z|| (backward-error
+!! test, valid for regular and singular endpoints).
+!!
+!! The residual test is essential: if the circle |t| = r also encloses
+!! other branch points of the path (the end game "operating zone" is not
+!! yet reached), the path may still close after some loops, but the mean
+!! is then not z(0). Worse, by Cauchy's theorem such estimates do not
+!! change between radii as long as no branch point lies in between, so
+!! the agreement test alone accepts them (observed for cyclic-6, where
+!! the operating zone of some paths is |t| < 1e-4). Loops that cannot be
+!! tracked are skipped by moving inward. In projective coordinates on an
+!! affine patch, endpoints at infinity (w = 0) are handled exactly like
+!! finite ones.
 
   use polyhomocont__config, only : wp
   use polyhomocont__config, only : pi
@@ -67,6 +76,9 @@ module polyhomocont__endgame
       !! Largest winding number considered.
     real(wp) :: tol = 1.0e-11_wp
       !! Relative agreement of consecutive estimates for convergence.
+    real(wp) :: residual_tol = 1.0e-8_wp
+      !! Estimates must satisfy ||H(z, 0)|| <= residual_tol *
+      !! ||dH/dz|| ||z|| (maximum norms).
     real(wp) :: closure_factor = 0.1_wp
       !! A loop is closed if the distance of its end point to its start
       !! point is below closure_factor times the smallest distance
@@ -82,6 +94,8 @@ module polyhomocont__endgame
     real(wp) :: error = huge(1.0_wp)
       !! Relative difference between the returned estimate and the
       !! previous one (an estimate of its accuracy).
+    real(wp) :: residual = huge(1.0_wp)
+      !! Backward error ||H(z, 0)|| / (||dH/dz|| ||z||) of the estimate.
     real(wp) :: radius = 0.0_wp
       !! Radius at which the returned estimate was computed.
     integer :: naccepted = 0
@@ -110,6 +124,8 @@ contains
     real(wp) :: r
     real(wp) :: rnew
     real(wp) :: err
+    real(wp) :: resid
+    real(wp) :: best_resid
     integer :: c
     logical :: have_prev
     logical :: ok
@@ -124,20 +140,27 @@ contains
     res%z = z
     r = opts%t_start
     have_prev = .false.
+    best_resid = huge(1.0_wp)
 
     do
       call loops(hom, z, r, opts, segopts, est, c, ok, res)
       if (ok) then
         if (have_prev) then
           err = norm_inf(est - prev)/max(norm_inf(est), tiny(1.0_wp))
-          if (err < res%error) then
+          resid = backward_error(hom, est)
+          ! Keep the best estimate: valid residuals first, then the
+          ! smallest difference to the previous estimate
+          if (better(resid, err, best_resid, res%error,  &
+            opts%residual_tol)) then
             res%status = endgame_not_converged
             res%z = est
             res%winding_number = c
             res%error = err
+            res%residual = resid
             res%radius = r
+            best_resid = resid
           end if
-          if (err <= opts%tol) then
+          if (err <= opts%tol .and. resid <= opts%residual_tol) then
             res%status = endgame_converged
             return
           end if
@@ -159,6 +182,50 @@ contains
     end do
 
   end subroutine cauchy_endgame
+
+  function backward_error(hom, z) result(be)
+    !! ||H(z, 0)|| / (||dH/dz|| ||z||) with maximum norms (the matrix norm
+    !! is the maximum absolute row sum).
+
+    class(homotopy), intent(inout) :: hom
+    complex(wp), intent(in) :: z(:)
+    real(wp) :: be
+
+    complex(wp) :: h(size(z))
+    complex(wp) :: hz(size(z), size(z))
+    complex(wp) :: ht(size(z))
+
+    call hom%evaluate(z, (0.0_wp, 0.0_wp), h, hz, ht)
+    be = norm_inf(h)/max(maxval(sum(abs(hz), dim=2))*norm_inf(z),  &
+      tiny(1.0_wp))
+
+  end function backward_error
+
+  pure function better(resid, err, best_resid, best_err, residual_tol)  &
+    result(b)
+    !! Whether an estimate (resid, err) is preferable to the best one so
+    !! far: estimates passing the residual test beat those that do not;
+    !! among equals, the smaller difference err wins.
+
+    real(wp), intent(in) :: resid
+    real(wp), intent(in) :: err
+    real(wp), intent(in) :: best_resid
+    real(wp), intent(in) :: best_err
+    real(wp), intent(in) :: residual_tol
+    logical :: b
+
+    logical :: valid
+    logical :: best_valid
+
+    valid = resid <= residual_tol
+    best_valid = best_resid <= residual_tol
+    if (valid .neqv. best_valid) then
+      b = valid
+    else
+      b = err < best_err
+    end if
+
+  end function better
 
   subroutine loops(hom, z, r, opts, segopts, est, c, ok, res)
     !! Tracks loops |t| = r starting and ending at t = r, with nsamples
