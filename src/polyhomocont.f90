@@ -10,6 +10,7 @@ module polyhomocont
   use polyhomocont__config, only : err_invalid_input
   use polyhomocont__config, only : err_singular_matrix
   use polyhomocont__config, only : err_numerical
+  use polyhomocont__system, only : poly_system
 
   implicit none
 
@@ -21,5 +22,7 @@ module polyhomocont
   public :: err_invalid_input
   public :: err_singular_matrix
   public :: err_numerical
+  ! Polynomial systems
+  public :: poly_system
 
 end module polyhomocont
