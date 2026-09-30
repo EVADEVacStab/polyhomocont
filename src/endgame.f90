@@ -12,13 +12,21 @@ module polyhomocont__endgame
 !! (Morgan, Sommese, Wampler, Numer. Math. 58 (1991) 669; Bertini).
 !!
 !! The end game starts at t = t_start on the real axis, with the path
-!! already tracked there. At each radius r it tracks loops |t| = r
-!! (m arcs per loop) until the path closes, which gives c and an estimate
-!! of z(0). It then moves inward along the real axis to
-!! r * radius_factor and repeats, until two consecutive estimates agree
-!! to the relative tolerance `tol` and the estimate solves the target
-!! system, ||H(z, 0)|| <= residual_tol * ||dH/dz|| ||z|| (backward-error
-!! test, valid for regular and singular endpoints).
+!! already tracked there, and moves inward along the real axis through
+!! the radii r_k = t_start * radius_factor^k. Loops are expensive, and
+!! useless outside the operating zone (where they enclose other branch
+!! points and often do not close at all), so they are only tracked once
+!! the path behaves like a Puiseux series z0 + a t^(1/c): then the
+!! differences d_k = ||z(r_{k-1}) - z(r_k)|| satisfy
+!! d_{k-1}/d_k -> radius_factor^(-1/c), which gives an estimate of c.
+!! When two consecutive estimates agree (or below loop_radius), loops
+!! |t| = r (nsamples arcs per loop) are tracked at every radius until the
+!! path closes, which gives c and an estimate of z(0), with at most
+!! 2 nint(c_est) + 2 loops (max_winding below loop_radius). This
+!! continues until two consecutive estimates agree to the relative
+!! tolerance `tol` and the estimate solves the target system,
+!! ||H(z, 0)|| <= residual_tol * ||dH/dz|| ||z|| (backward-error test,
+!! valid for regular and singular endpoints).
 !!
 !! The residual test is essential: if the circle |t| = r also encloses
 !! other branch points of the path (the end game "operating zone" is not
@@ -74,6 +82,13 @@ module polyhomocont__endgame
       !! Smallest radius; below it, the end game gives up.
     integer :: max_winding = 16
       !! Largest winding number considered.
+    real(wp) :: loop_radius = 1.0e-5_wp
+      !! Below this radius, loops are tracked even without a consistent
+      !! estimate of the winding number from the radial samples.
+    real(wp) :: winding_agreement = 0.2_wp
+      !! Two consecutive winding number estimates c1, c2 from the radial
+      !! samples are consistent if |c1 - c2| <= winding_agreement *
+      !! max(1, c2).
     real(wp) :: tol = 1.0e-11_wp
       !! Relative agreement of consecutive estimates for convergence.
     real(wp) :: residual_tol = 1.0e-8_wp
@@ -121,65 +136,133 @@ contains
     type(path_info) :: info
     complex(wp) :: est(size(z))
     complex(wp) :: prev(size(z))
+    complex(wp) :: zold(size(z))
     real(wp) :: r
     real(wp) :: rnew
     real(wp) :: err
     real(wp) :: resid
     real(wp) :: best_resid
+    real(wp) :: d
+    real(wp) :: dprev
+    real(wp) :: cest
+    real(wp) :: cest_prev
     integer :: c
+    integer :: max_loops
     logical :: have_prev
+    logical :: gate
     logical :: ok
 
-    ! Arcs and radial segments are short: allow a single step for each,
-    ! refined adaptively if the corrector does not converge
+    ! Arcs (length pi r / 4 for 8 samples) and radial segments (length
+    ! 0.75 r) are short and of similar length: allow a single step for
+    ! each, and carry the step size over from one segment to the next
+    ! (segopts%step_init is updated after every segment), so that the
+    ! adaptation is not repeated for every arc
     segopts = topts
     segopts%step_init = 1.0_wp
     segopts%step_max = 1.0_wp
+    segopts%grow_after = 2
 
     res%status = endgame_failed
     res%z = z
     r = opts%t_start
     have_prev = .false.
     best_resid = huge(1.0_wp)
+    gate = .false.
+    dprev = -1.0_wp
+    cest = -1.0_wp
+    cest_prev = -1.0_wp
+    max_loops = opts%max_winding
 
     do
-      call loops(hom, z, r, opts, segopts, est, c, ok, res)
+      if (gate .or. r < opts%loop_radius) then
+        if (.not. gate) max_loops = opts%max_winding
+        call loops(hom, z, r, opts, max_loops, segopts, est, c, ok, res)
+      else
+        ok = .false.
+      end if
+      if (.not. ok) then
+        ! Back to estimating the winding number from radial samples
+        have_prev = .false.
+        gate = .false.
+      end if
       if (ok) then
-        if (have_prev) then
-          err = norm_inf(est - prev)/max(norm_inf(est), tiny(1.0_wp))
-          resid = backward_error(hom, est)
-          ! Keep the best estimate: valid residuals first, then the
-          ! smallest difference to the previous estimate
-          if (better(resid, err, best_resid, res%error,  &
-            opts%residual_tol)) then
-            res%status = endgame_not_converged
-            res%z = est
-            res%winding_number = c
-            res%error = err
-            res%residual = resid
-            res%radius = r
-            best_resid = resid
-          end if
-          if (err <= opts%tol .and. resid <= opts%residual_tol) then
-            res%status = endgame_converged
-            return
-          end if
-        end if
+        call record()
+        if (res%status == endgame_converged) return
         prev = est
         have_prev = .true.
-      else
-        have_prev = .false.
       end if
 
       rnew = opts%radius_factor*r
       if (rnew < opts%radius_min) return
+      zold = z
       call track_segment(hom, z, line_segment(cmplx(r, 0.0_wp, kind=wp),  &
         cmplx(rnew, 0.0_wp, kind=wp)), segopts, info)
+      segopts%step_init = min(max(info%step, segopts%step_min), 1.0_wp)
       res%naccepted = res%naccepted + info%naccepted
       res%nrejected = res%nrejected + info%nrejected
-      if (info%status /= path_success) return
+      if (info%status /= path_success) then
+        ! The path cannot be followed further inward (typically close to
+        ! a singular endpoint with a large winding number, where the
+        ! corrector cannot reach its tolerance). If no loop was tried at
+        ! the last radius, try one with the full winding limit; its
+        ! estimate is returned without convergence check.
+        z = zold
+        if (.not. (gate .or. r < opts%loop_radius)) then
+          call loops(hom, z, r, opts, opts%max_winding, segopts, est, c,  &
+            ok, res)
+          have_prev = .false.
+          if (ok) call record()
+        end if
+        return
+      end if
       r = rnew
+
+      ! Winding number estimate from the radial differences
+      d = norm_inf(z - zold)
+      if (.not. gate .and. dprev > 0.0_wp .and. d > 0.0_wp) then
+        cest_prev = cest
+        cest = -1.0_wp
+        if (dprev > d) cest = log(1.0_wp/opts%radius_factor)/log(dprev/d)
+        if (cest >= 0.5_wp .and. cest <= opts%max_winding + 0.5_wp  &
+          .and. cest_prev > 0.0_wp) then
+          if (abs(cest - cest_prev)  &
+            <= opts%winding_agreement*max(1.0_wp, cest)) then
+            gate = .true.
+            max_loops = min(opts%max_winding, 2*nint(cest) + 2)
+          end if
+        end if
+      end if
+      dprev = d
     end do
+
+  contains
+
+    subroutine record()
+      !! Keeps the estimate est (winding number c, radius r) if it is
+      !! better than the best one so far (valid residuals first, then the
+      !! smallest difference to the previous estimate), and flags
+      !! convergence.
+
+      err = huge(1.0_wp)
+      if (have_prev) then
+        err = norm_inf(est - prev)/max(norm_inf(est), tiny(1.0_wp))
+      end if
+      resid = backward_error(hom, est)
+      if (res%status == endgame_failed .or. better(resid, err,  &
+        best_resid, res%error, opts%residual_tol)) then
+        res%status = endgame_not_converged
+        res%z = est
+        res%winding_number = c
+        res%error = err
+        res%residual = resid
+        res%radius = r
+        best_resid = resid
+      end if
+      if (err <= opts%tol .and. resid <= opts%residual_tol) then
+        res%status = endgame_converged
+      end if
+
+    end subroutine record
 
   end subroutine cauchy_endgame
 
@@ -227,12 +310,13 @@ contains
 
   end function better
 
-  subroutine loops(hom, z, r, opts, segopts, est, c, ok, res)
+  subroutine loops(hom, z, r, opts, max_loops, segopts, est, c, ok, res)
     !! Tracks loops |t| = r starting and ending at t = r, with nsamples
     !! arcs per loop, until the path closes. Returns the winding number c
     !! and the Cauchy estimate est = mean of the samples; `ok` is false if
-    !! an arc fails or the path does not close within max_winding loops.
-    !! z is not modified.
+    !! an arc fails or the path does not close within max_loops loops.
+    !! z is not modified; segopts%step_init is updated to the last step
+    !! size.
     !!
     !! Closure test: after c loops, the path is closed if the distance of
     !! the current point to the start point is at most closure_factor
@@ -245,7 +329,8 @@ contains
     complex(wp), intent(in) :: z(:)
     real(wp), intent(in) :: r
     type(endgame_options), intent(in) :: opts
-    type(tracker_options), intent(in) :: segopts
+    integer, intent(in) :: max_loops
+    type(tracker_options), intent(inout) :: segopts
     complex(wp), intent(out) :: est(:)
     integer, intent(out) :: c
     logical, intent(out) :: ok
@@ -269,13 +354,14 @@ contains
     nsamp = 0
     spacing = huge(1.0_wp)
 
-    do c = 1, opts%max_winding
+    do c = 1, max_loops
       do j = 1, opts%nsamples
         zsum = zsum + zc
         nsamp = nsamp + 1
         zprev = zc
         call track_segment(hom, zc,  &
           arc_segment(r, (j - 1)*dtheta, dtheta), segopts, info)
+        segopts%step_init = min(max(info%step, segopts%step_min), 1.0_wp)
         res%naccepted = res%naccepted + info%naccepted
         res%nrejected = res%nrejected + info%nrejected
         if (info%status /= path_success) return

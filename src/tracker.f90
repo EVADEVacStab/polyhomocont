@@ -104,6 +104,9 @@ module polyhomocont__tracker
       !! Number of accepted steps.
     integer :: nrejected = 0
       !! Number of rejected steps.
+    real(wp) :: step = 0.0_wp
+      !! Step size (s units) proposed for continuing the tracking; can be
+      !! used as step_init for a following segment of similar length.
   end type path_info
 
 contains
@@ -256,6 +259,7 @@ contains
 
     info%s = s
     info%t = seg_t(seg, s)
+    info%step = step
 
   end subroutine track_segment
 

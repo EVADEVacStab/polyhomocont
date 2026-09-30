@@ -7,7 +7,8 @@ module polyhomocont__solve
 !! in projective coordinates from t = 1 to the start of the end game
 !! (t = 0.1 by default); the Cauchy end game then computes the endpoint
 !! z(0) and the winding number c of the path. Each endpoint is classified:
-!!   - at infinity if |w| <= infinity_tol * ||z|| (w = z(n+1)), otherwise
+!!   - at infinity if |w| <= max(infinity_tol, 10 e) ||z|| (w = z(n+1)),
+!!     with e the end game error estimate (at most 1e-4), otherwise
 !!     finite with x = z(1:n)/w;
 !!   - singular if c > 1 or the condition number of the Jacobian of the
 !!     (patched, homogenized) target system exceeds singular_cond;
@@ -313,7 +314,11 @@ contains
     p%z = z
     znorm = norm_inf(z)
     p%residual = maxval(abs(h(1:n))/znorm**hom%deg)
-    p%at_infinity = abs(z(n + 1)) <= opts%infinity_tol*znorm
+    ! At infinity if w vanishes within the accuracy of the endpoint: the
+    ! end game error estimate (capped at 1e-4) matters for slowly
+    ! converging paths with large winding numbers
+    p%at_infinity = abs(z(n + 1)) <= max(opts%infinity_tol,  &
+      10.0_wp*min(p%endgame_error, 1.0e-4_wp))*znorm
     if (.not. p%at_infinity) then
       p%x = z(1:n)/z(n + 1)
       p%is_real = maxval(abs(aimag(p%x)))  &

@@ -242,11 +242,22 @@ with multiplicities, cyclic-5/6 benchmarks. Lessons learned:
   across radii (Cauchy's theorem) but are wrong: the backward-error
   test `residual_tol` in the end game is essential (cyclic-6).
 
+**End game performance (2026-09-30, driven by the 2HDM+a tadpoles in
+`../Physics/2HDMa/thdma_vacua`)**: loops at radii outside the operating
+zone enclose other branch points and often never close (16 windings x 8
+arcs wasted per radius), which made the end game ~10x more expensive than
+the path itself. Now: loops only once two consecutive winding number
+estimates from radial samples agree (ratio of successive differences
+-> radius_factor^(-1/c)) or below `loop_radius` = 1e-5; loop count
+capped by the estimate; step size carried over between end game
+segments; fallback loops when radial tracking fails near high-winding
+endpoints; points at infinity judged against the end game error
+estimate. 2HDM+a point: ~1300-1700 -> ~110 steps per regular path.
+
 **Possible next steps** (ask the user which to pursue):
-- Performance: the end game costs ~3x the steps of a regular path
-  (~39 vs 13); e.g. accept c = 1 estimates early by a Newton check at
-  t = 0. The sparse evaluator could share work between terms. The
-  debug-profile test suite takes ~30 s, mostly cyclic-6.
+- Performance: the sparse evaluator could share work between terms;
+  paths to infinity with large winding numbers still cost ~400-600
+  steps.
 - Re-track paths with tighter settings when `nduplicates > 0`.
 - Coefficient scaling (HOM4PS Sec. 5.2), polyhedral homotopy (mixed
   volume / mixed cells), parameter homotopy, monodromy (roadmap above).
