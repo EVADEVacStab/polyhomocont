@@ -21,6 +21,7 @@ module testing
   public :: jacobian_fd_error
   public :: homogeneous_jacobian_fd_error
   public :: homogeneity_error
+  public :: set_distance
 
   integer :: nfail = 0
   integer :: npass = 0
@@ -214,5 +215,49 @@ contains
       maxval(abs(f - z(n+1)**d*fa))/max(1.0_wp, maxval(abs(f))))
 
   end function homogeneity_error
+
+  function set_distance(a, b) result(dist)
+    !! Distance between two sets of points given as the columns of `a` and
+    !! `b` (in arbitrary order): the largest relative distance of a point
+    !! of either set to its nearest point in the other set. Returns huge
+    !! if the numbers of points differ.
+
+    complex(wp), intent(in) :: a(:, :)
+    complex(wp), intent(in) :: b(:, :)
+    real(wp) :: dist
+
+    integer :: i
+
+    dist = 0.0_wp
+    if (size(a, 2) /= size(b, 2)) then
+      dist = huge(1.0_wp)
+      return
+    end if
+    do i = 1, size(a, 2)
+      dist = max(dist, nearest(a(:, i), b))
+    end do
+    do i = 1, size(b, 2)
+      dist = max(dist, nearest(b(:, i), a))
+    end do
+
+  contains
+
+    function nearest(x, pts) result(d)
+
+      complex(wp), intent(in) :: x(:)
+      complex(wp), intent(in) :: pts(:, :)
+      real(wp) :: d
+
+      integer :: j
+
+      d = huge(1.0_wp)
+      do j = 1, size(pts, 2)
+        d = min(d, maxval(abs(x - pts(:, j)))/max(1.0_wp,  &
+          maxval(abs(x))))
+      end do
+
+    end function nearest
+
+  end function set_distance
 
 end module testing
